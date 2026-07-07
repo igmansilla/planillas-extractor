@@ -97,7 +97,6 @@ export function Upload() {
           type="file"
           multiple
           accept="image/*"
-          capture="environment"
           hidden
           onChange={(e) => onFiles(e.target.files)}
         />
