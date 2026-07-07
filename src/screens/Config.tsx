@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppState, useDispatch } from '../state/store';
 import { listModels } from '../lib/gemini';
 import { buildPrompt, makeKey } from '../lib/schema';
@@ -9,6 +9,7 @@ export function Config() {
   const dispatch = useDispatch();
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const loadedKeyRef = useRef('');
 
   const setColumns = (columns: Column[]) => dispatch({ type: 'setConfig', config: { columns } });
 
@@ -18,7 +19,9 @@ export function Config() {
     try {
       const list = await listModels(config.apiKey.trim());
       dispatch({ type: 'setModels', models: list });
-      if (list.length && !config.model) {
+      // Auto-selecciona el último Pro (list[0], ya viene ordenado) si el modelo
+      // actual está vacío o ya no existe en la lista. Así no hay que elegir a mano.
+      if (list.length && !list.some((m) => m.name === config.model)) {
         dispatch({ type: 'setConfig', config: { model: list[0].name } });
       }
     } catch (e) {
@@ -27,6 +30,20 @@ export function Config() {
       setLoadingModels(false);
     }
   }
+
+  // Apenas hay una API key, carga los modelos sola (una vez por key) y elige el
+  // default. El usuario no necesita tocar nada ni elegir el modelo.
+  useEffect(() => {
+    const key = config.apiKey.trim();
+    if (!key || loadingModels) return;
+    if (loadedKeyRef.current === key) return;
+    const t = setTimeout(() => {
+      loadedKeyRef.current = key;
+      void handleLoadModels();
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.apiKey, loadingModels]);
 
   function updateColumn(i: number, patch: Partial<Column>) {
     setColumns(config.columns.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
@@ -66,13 +83,18 @@ export function Config() {
             onChange={(e) => dispatch({ type: 'setConfig', config: { apiKey: e.target.value } })}
           />
         </label>
-        <button className="btn" onClick={handleLoadModels} disabled={!config.apiKey.trim() || loadingModels}>
-          {loadingModels ? 'Cargando…' : 'Cargar modelos'}
-        </button>
-        {modelsError && <p className="error">{modelsError}</p>}
+        {loadingModels && <p className="hint">Cargando modelos…</p>}
+        {modelsError && (
+          <>
+            <p className="error">{modelsError}</p>
+            <button className="btn" onClick={handleLoadModels} disabled={!config.apiKey.trim() || loadingModels}>
+              Reintentar
+            </button>
+          </>
+        )}
         {models.length > 0 && (
           <label className="field">
-            <span>Modelo</span>
+            <span>Modelo (elegido automáticamente, podés cambiarlo)</span>
             <select
               value={config.model}
               onChange={(e) => dispatch({ type: 'setConfig', config: { model: e.target.value } })}
