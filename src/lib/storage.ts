@@ -18,15 +18,15 @@ export function saveConfig(config: AppConfig): void {
 }
 
 // --- Resultados/estado por foto en IndexedDB (para resume) ---
-// Guardamos una versión serializable de PhotoItem (sin el object URL, que se
-// regenera al recargar y no es persistente).
+// Guardamos el PhotoItem completo. El `thumbUrl` ahora es un data URL chico
+// (miniatura), así que persistirlo es barato y evita re-decodificar la foto
+// full-res al recargar. El `File` es structured-cloneable y permite reprocesar
+// pendientes tras recargar.
 
 const DB_NAME = 'planillas';
 const STORE = 'photos';
 
-// Persistimos todo menos el thumbUrl (object URL, no persistente). El File sí se
-// guarda: es structured-cloneable, y permite reprocesar pendientes tras recargar.
-type StoredPhoto = Omit<PhotoItem, 'thumbUrl'>;
+type StoredPhoto = PhotoItem;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -44,10 +44,9 @@ function openDb(): Promise<IDBDatabase> {
 
 export async function savePhoto(photo: PhotoItem): Promise<void> {
   const db = await openDb();
-  const { thumbUrl: _thumbUrl, ...stored } = photo;
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(stored);
+    tx.objectStore(STORE).put(photo);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

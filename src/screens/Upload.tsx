@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { savePhoto, useAppState, useDispatch } from '../state/store';
-import { compressImage } from '../lib/image';
+import { compressImage, makeThumbnail } from '../lib/image';
 import { extractRows } from '../lib/gemini';
 import { buildPrompt, buildResponseSchema } from '../lib/schema';
 import { runQueue } from '../lib/queue';
@@ -22,17 +22,31 @@ export function Upload() {
   const columns = useMemo(() => config.columns.filter((c) => c.label), [config.columns]);
   const done = photos.filter((p) => p.status === 'ok' || p.status === 'REVISAR' || p.status === 'error').length;
 
-  function onFiles(files: FileList | null) {
+  async function onFiles(files: FileList | null) {
     if (!files) return;
-    const next: PhotoItem[] = Array.from(files).map((file, i) => ({
-      id: `${Date.now()}-${i}-${file.name}`,
-      name: file.name,
-      file,
-      thumbUrl: URL.createObjectURL(file),
-      status: 'pendiente' as PhotoStatus,
-      rows: [],
-    }));
-    dispatch({ type: 'addPhotos', photos: next });
+    const arr = Array.from(files);
+    const stamp = Date.now();
+    // Secuencial a propósito: genera una miniatura por vez para no decodificar
+    // muchas fotos full-res en paralelo (evita el "memoria insuficiente" en celu).
+    for (let i = 0; i < arr.length; i++) {
+      const file = arr[i];
+      let thumbUrl = '';
+      try {
+        thumbUrl = await makeThumbnail(file);
+      } catch {
+        // Si no se puede hacer la miniatura, seguimos sin ella (se procesa igual).
+      }
+      const item: PhotoItem = {
+        id: `${stamp}-${i}-${file.name}`,
+        name: file.name,
+        file,
+        thumbUrl,
+        status: 'pendiente',
+        rows: [],
+      };
+      dispatch({ type: 'addPhotos', photos: [item] });
+      void savePhoto(item); // persistir pendiente para resume
+    }
   }
 
   async function process(target: PhotoItem[]) {
@@ -65,7 +79,7 @@ export function Upload() {
           await savePhoto({ ...photo, status: 'error', error, rows: [] });
         }
       },
-      { concurrency: 4 },
+      { concurrency: 3 },
     );
     setRunning(false);
   }

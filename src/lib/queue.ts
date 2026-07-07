@@ -9,7 +9,7 @@ export interface QueueOptions {
 export async function runQueue<T extends { id: string }>(
   items: T[],
   worker: (item: T) => Promise<void>,
-  { concurrency = 4, onError }: QueueOptions = {},
+  { concurrency = 3, onError }: QueueOptions = {},
 ): Promise<void> {
   let cursor = 0;
   const runNext = async (): Promise<void> => {

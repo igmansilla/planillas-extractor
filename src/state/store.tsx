@@ -94,7 +94,8 @@ export function Provider({ children }: { children: ReactNode }) {
       const stored = await loadPhotos();
       const photos: PhotoItem[] = stored.map((s) => ({
         ...s,
-        thumbUrl: URL.createObjectURL(s.file),
+        // Usa la miniatura guardada; solo cae a la foto full-res si falta (registros viejos).
+        thumbUrl: s.thumbUrl || URL.createObjectURL(s.file),
       }));
       dispatch({ type: 'hydrate', config, photos });
     })();
