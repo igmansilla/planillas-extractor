@@ -53,7 +53,7 @@ async function loadBitmap(file: File, hintWidth: number): Promise<Loaded> {
   const img = new Image();
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve();
-    img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
+    img.onerror = () => reject(new Error('No se pudo leer la imagen (¿formato no soportado, ej. HEIC de iPhone?)'));
     img.src = url;
   });
   return { src: img, w: img.naturalWidth, h: img.naturalHeight, done: () => URL.revokeObjectURL(url) };

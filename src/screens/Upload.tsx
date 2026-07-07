@@ -79,7 +79,7 @@ export function Upload() {
           await savePhoto({ ...photo, status: 'error', error, rows: [] });
         }
       },
-      { concurrency: 3 },
+      { concurrency: 2 },
     );
     setRunning(false);
   }

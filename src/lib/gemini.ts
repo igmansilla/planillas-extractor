@@ -49,7 +49,26 @@ export async function listModels(apiKey: string): Promise<ModelInfo[]> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // POST /models/<model>:generateContent con structured output.
-// Reintenta 429/5xx con backoff exponencial (máx 3 reintentos).
+const MAX_RETRIES = 5;
+const MAX_BACKOFF_MS = 60_000;
+
+// Cuánto esperar antes de reintentar un 429/5xx. Respeta el retraso que sugiere el
+// servidor (header Retry-After o RetryInfo.retryDelay en el body de Gemini); si no
+// hay, usa backoff exponencial. Todo con techo de MAX_BACKOFF_MS.
+function retryDelayMs(res: Response, body: string, attempt: number): number {
+  const header = res.headers.get('retry-after');
+  if (header) {
+    const secs = Number(header);
+    if (!Number.isNaN(secs)) return Math.min(secs * 1000, MAX_BACKOFF_MS);
+    const when = Date.parse(header);
+    if (!Number.isNaN(when)) return Math.min(Math.max(0, when - Date.now()), MAX_BACKOFF_MS);
+  }
+  const m = body.match(/"retryDelay"\s*:\s*"([\d.]+)s"/);
+  if (m) return Math.min(Math.ceil(parseFloat(m[1]) * 1000) + 500, MAX_BACKOFF_MS);
+  return Math.min(2 ** attempt * 1000 + Math.random() * 400, MAX_BACKOFF_MS);
+}
+
+// Reintenta 429/5xx respetando el retraso del servidor (máx MAX_RETRIES reintentos).
 export async function extractRows(
   apiKey: string,
   model: string,
@@ -76,8 +95,7 @@ export async function extractRows(
   };
 
   let lastErr: GeminiError | null = null;
-  for (let attempt = 0; attempt <= 3; attempt++) {
-    if (attempt > 0) await sleep(2 ** (attempt - 1) * 1000 + Math.random() * 300);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let res: Response;
     try {
       res = await fetch(url, {
@@ -87,12 +105,24 @@ export async function extractRows(
       });
     } catch (e) {
       lastErr = new GeminiError(`Error de red: ${(e as Error).message}`);
-      continue; // reintentar
+      if (attempt < MAX_RETRIES) {
+        await sleep(Math.min(2 ** attempt * 1000, MAX_BACKOFF_MS));
+        continue; // reintentar
+      }
+      break;
     }
 
     if (res.status === 429 || res.status >= 500) {
-      lastErr = new GeminiError(`Gemini respondió ${res.status}`, res.status);
-      continue; // reintentar
+      const errBody = await res.text().catch(() => '');
+      lastErr = new GeminiError(
+        res.status === 429 ? 'Límite de la API alcanzado (429)' : `Gemini respondió ${res.status}`,
+        res.status,
+      );
+      if (attempt < MAX_RETRIES) {
+        await sleep(retryDelayMs(res, errBody, attempt));
+        continue; // reintentar
+      }
+      break;
     }
     if (!res.ok) {
       throw new GeminiError(`Gemini respondió ${res.status}`, res.status); // 4xx no se reintenta
