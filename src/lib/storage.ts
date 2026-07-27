@@ -4,10 +4,21 @@ import type { AppConfig, PhotoItem } from '../types';
 
 const CONFIG_KEY = 'planillas.config';
 
+// Modelo que la versión anterior auto-elegía por un orden mal calibrado. Resuelve a
+// gemini-3.1-pro, sin cuota en free tier (`limit: 0`), así que fallaban todas las
+// fotos con 429. Sigue existiendo en el listado, así que no se corrige solo: hay que
+// limpiarlo de las configs ya guardadas para que la UI vuelva a auto-elegir un Flash.
+const MODELO_ROTO = 'models/gemini-pro-latest';
+
+export function migrateConfig(config: AppConfig): AppConfig {
+  if (config.model === MODELO_ROTO) return { ...config, model: '' };
+  return config;
+}
+
 export function loadConfig(): AppConfig | null {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    return raw ? (JSON.parse(raw) as AppConfig) : null;
+    return raw ? migrateConfig(JSON.parse(raw) as AppConfig) : null;
   } catch {
     return null;
   }

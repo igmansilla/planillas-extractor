@@ -21,6 +21,11 @@ export function Upload() {
 
   const columns = useMemo(() => config.columns.filter((c) => c.label), [config.columns]);
   const done = photos.filter((p) => p.status === 'ok' || p.status === 'REVISAR' || p.status === 'error').length;
+  // Mensajes de error distintos (no uno por foto: el mismo fallo se repite en todas).
+  const errorMessages = useMemo(
+    () => [...new Set(photos.filter((p) => p.status === 'error' && p.error).map((p) => p.error!))],
+    [photos],
+  );
 
   async function onFiles(files: FileList | null) {
     if (!files) return;
@@ -116,6 +121,18 @@ export function Upload() {
               Reintentar fallidas ({failed().length})
             </button>
           </div>
+
+          {/* Los motivos de error, acá mismo. Antes la grilla decía "Error" a secas y
+              el detalle solo aparecía en Resultados: sin eso no había forma de saber
+              que la causa era el modelo sin cuota. Se agrupan porque cuando falla,
+              suele fallar igual en todas las fotos. */}
+          {errorMessages.length > 0 && (
+            <div className="alert error">
+              {errorMessages.map((msg) => (
+                <p key={msg}>{msg}</p>
+              ))}
+            </div>
+          )}
 
           <div className="thumb-grid">
             {photos.map((p) => (

@@ -8,3 +8,4 @@ vite.config.d.ts
 *.local
 .DS_Store
 .playwright-mcp/
+.debug-gemini/

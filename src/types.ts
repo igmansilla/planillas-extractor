@@ -28,6 +28,10 @@ export interface PhotoItem {
 export interface ModelInfo {
   name: string; // "models/gemini-..."
   displayName: string;
+  // Para qué sirve, en criollo. La lista curada la usa para que se elija por lo que
+  // hace el modelo y no por descifrar el número de versión en el nombre.
+  note?: string;
+  requiresBilling?: boolean; // sin facturación activa, devuelve 429 siempre
 }
 
 export interface AppConfig {

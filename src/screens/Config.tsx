@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState, useDispatch } from '../state/store';
-import { listModels } from '../lib/gemini';
+import { listModels, pickCurated } from '../lib/gemini';
 import { buildPrompt, makeKey } from '../lib/schema';
 import type { Column } from '../types';
 
@@ -19,10 +19,12 @@ export function Config() {
     try {
       const list = await listModels(config.apiKey.trim());
       dispatch({ type: 'setModels', models: list });
-      // Auto-selecciona el último Pro (list[0], ya viene ordenado) si el modelo
-      // actual está vacío o ya no existe en la lista. Así no hay que elegir a mano.
-      if (list.length && !list.some((m) => m.name === config.model)) {
-        dispatch({ type: 'setConfig', config: { model: list[0].name } });
+      // Auto-selecciona el primer curado (el Flash vigente) si el modelo actual está
+      // vacío o ya no existe en la lista. Así no hay que elegir a mano. Tiene que ser
+      // un Flash: los Pro no tienen cuota en el plan gratuito.
+      const recomendado = pickCurated(list)[0];
+      if (recomendado && !list.some((m) => m.name === config.model)) {
+        dispatch({ type: 'setConfig', config: { model: recomendado.name } });
       }
     } catch (e) {
       setModelsError((e as Error).message);
@@ -66,6 +68,16 @@ export function Config() {
     setColumns(next.map((c, idx) => ({ ...c, key: makeKey(idx) })));
   }
 
+  // Desplegable principal: las pocas opciones curadas. Si hay guardado un modelo que
+  // no está entre ellas (elegido desde "ver todos"), se suma para no perderlo.
+  const curados = useMemo(() => pickCurated(models), [models]);
+  const opciones = useMemo(() => {
+    if (!config.model || curados.some((m) => m.name === config.model)) return curados;
+    const extra = models.find((m) => m.name === config.model);
+    return extra ? [...curados, extra] : curados;
+  }, [curados, models, config.model]);
+  const elegido = opciones.find((m) => m.name === config.model);
+
   const canContinue = config.apiKey.trim() && config.model && config.columns.some((c) => c.label);
 
   return (
@@ -93,19 +105,48 @@ export function Config() {
           </>
         )}
         {models.length > 0 && (
-          <label className="field">
-            <span>Modelo (elegido automáticamente, podés cambiarlo)</span>
-            <select
-              value={config.model}
-              onChange={(e) => dispatch({ type: 'setConfig', config: { model: e.target.value } })}
-            >
-              {models.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
+          <>
+            <label className="field">
+              <span>Modelo (elegido automáticamente, podés cambiarlo)</span>
+              <select
+                value={config.model}
+                onChange={(e) => dispatch({ type: 'setConfig', config: { model: e.target.value } })}
+              >
+                {/* Si hay un modelo guardado que no está entre los curados (elegido
+                    desde "ver todos"), se agrega para no perderlo del desplegable. */}
+                {opciones.map((m) => (
+                  <option key={m.name} value={m.name}>
+                    {m.note ? `${m.displayName} — ${m.note}` : m.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {elegido?.requiresBilling && (
+              <p className="error">
+                Este modelo necesita facturación activa en Google Cloud. Con el plan
+                gratuito devuelve error en todas las fotos.
+              </p>
+            )}
+
+            {/* Salida de emergencia, colapsada: si algún día Google retira los modelos
+                curados, se puede elegir otro sin esperar un cambio de código. */}
+            <details className="escape">
+              <summary>Ver todos los modelos ({models.length})</summary>
+              <label className="field">
+                <span>Todos los compatibles</span>
+                <select
+                  value={config.model}
+                  onChange={(e) => dispatch({ type: 'setConfig', config: { model: e.target.value } })}
+                >
+                  {models.map((m) => (
+                    <option key={m.name} value={m.name}>
+                      {m.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </details>
+          </>
         )}
       </section>
 
